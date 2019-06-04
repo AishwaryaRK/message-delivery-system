@@ -26,11 +26,11 @@ including both the server(hub) and the client.
  - Message types: `who_am_i`, `who_is_here`, `relay`.
  - For message types: `who_am_i` and `who_is_here`, the protocol is:
         
-        [MessasgeType]
+        [MessageTypeLength][MessasgeType]
         
  - For message type: `relay`, the protocol is:
          
-        [MessasgeType][Length][Message
+        [MessageTypeLength][MessasgeType][MessageLength][Message]
 
 ## Assumptions/Decisions
 
