@@ -2,6 +2,8 @@ package server
 
 import (
 	"../utility"
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"github.com/hashicorp/go-multierror"
 	"net"
@@ -49,7 +51,30 @@ func (server *Server) Start(laddr *net.TCPAddr) error {
 }
 
 func (server *Server) handleConnection(connection net.Conn) {
+	for {
+		messageTypeLengthBuffer := make([]byte, 1)
+		_, err := connection.Read(messageTypeLengthBuffer)
+		if err != nil {
+			fmt.Errorf("Error reading message type length: %s", err.Error())
+			continue
+		}
 
+		messageLength, err := binary.ReadUvarint(bytes.NewBuffer(messageTypeLengthBuffer))
+		if err != nil {
+			fmt.Errorf("Incorrect message type length: %s", err.Error())
+			continue
+		}
+
+		messageTypeBuffer := make([]byte, messageLength)
+		_, err = connection.Read(messageTypeBuffer)
+		if err != nil {
+			fmt.Errorf("Error reading message type: %s", err.Error())
+			continue
+		}
+
+		messageType := string(messageTypeBuffer)
+		print(messageType)
+	}
 }
 
 func (server *Server) Stop() error {
