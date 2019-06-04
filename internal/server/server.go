@@ -1,9 +1,11 @@
 package server
 
 import (
+	"../utility"
 	"fmt"
 	"github.com/hashicorp/go-multierror"
 	"net"
+	"sync"
 )
 
 const PORT = "9000"
@@ -11,6 +13,7 @@ const PORT = "9000"
 type Server struct {
 	listener    net.Listener
 	connections map[string]net.Conn
+	mutex       sync.Mutex
 }
 
 func New() *Server {
@@ -20,9 +23,34 @@ func New() *Server {
 		return nil
 	}
 
-	return &Server{listener: listener, connections: make(map[string]net.Conn)}
+	return &Server{listener: listener, connections: make(map[string]net.Conn), mutex: sync.Mutex{}}
 }
 
+func (server *Server) Start(laddr *net.TCPAddr) error {
+	connection, err := server.listener.Accept()
+	if err != nil {
+		fmt.Errorf("Error accepting a client connection: %s", err.Error())
+		return err
+	}
+
+	server.mutex.Lock()
+	userID, err := utility.GenerateUUID()
+	if err != nil {
+		fmt.Errorf("Error generating userID: %s", err.Error())
+		server.mutex.Unlock()
+		return err
+	}
+	server.connections[userID] = connection
+	server.mutex.Unlock()
+
+	fmt.Println("Start handling client connection with userID: %s", userID)
+	go server.handleConnection(connection)
+	return nil
+}
+
+func (server *Server) handleConnection(connection net.Conn) {
+
+}
 
 func (server *Server) Stop() error {
 	var allErrors *multierror.Error
