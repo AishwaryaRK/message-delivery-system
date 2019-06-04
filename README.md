@@ -22,7 +22,15 @@ including both the server(hub) and the client.
 
 ## Protocol
 
-Protocol is on top of pure TCP.
+ - Protocol is on top of pure TCP.
+ - Message types: `who_am_i`, `who_is_here`, `relay`.
+ - For message types: `who_am_i` and `who_is_here`, the protocol is:
+        
+        [MessasgeType]
+        
+ - For message type: `relay`, the protocol is:
+         
+        [MessasgeType][Length][Message
 
 ## Assumptions/Decisions
 
