@@ -30,7 +30,7 @@ including both the server(hub) and the client.
         
  - For message type: `relay`, the protocol is:
          
-        [MessageTypeLength][MessasgeType][MessageLength][Message]
+        [MessageTypeLength][MessasgeType][ReceiverListLength][Receivers][MessageLength][Message]
 
 ## Assumptions/Decisions
 
