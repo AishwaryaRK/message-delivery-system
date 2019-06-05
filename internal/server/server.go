@@ -12,6 +12,10 @@ import (
 
 const PORT = "9000"
 
+var MESSAGE_TYPES = map[string]func(server *Server, c net.Conn){
+	"who_am_i":    handleWhoAmIRequest,
+}
+
 type Server struct {
 	listener    net.Listener
 	connections map[string]net.Conn
@@ -73,7 +77,12 @@ func (server *Server) handleConnection(connection net.Conn) {
 		}
 
 		messageType := string(messageTypeBuffer)
-		print(messageType)
+		if request, ok := MESSAGE_TYPES[messageType]; ok {
+			request(server, connection)
+		} else {
+			fmt.Errorf("Incorrect message type: %s", messageType)
+			continue
+		}
 	}
 }
 
@@ -96,3 +105,15 @@ func (server *Server) Stop() error {
 
 	return allErrors.ErrorOrNil()
 }
+
+var handleWhoAmIRequest = func(server *Server, clientConnection net.Conn) {
+	for userID, connection := range server.connections {
+		if connection == clientConnection {
+			_, err := clientConnection.Write([]byte(userID))
+			if err != nil {
+				fmt.Errorf("Error sending `who_am_i` response to client with user_id %s: %s", userID, err.Error())
+			}
+		}
+	}
+}
+
