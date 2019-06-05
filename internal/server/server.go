@@ -16,6 +16,7 @@ const PORT = "9000"
 var MESSAGE_TYPES = map[string]func(server *Server, c net.Conn){
 	"who_am_i":    handleWhoAmIRequest,
 	"who_is_here": handleListClientIDsRequest,
+	"relay":       handleRelayRequest,
 }
 
 type Server struct {
@@ -51,8 +52,9 @@ func (server *Server) Start(laddr *net.TCPAddr) error {
 	server.connections[userID] = connection
 	server.mutex.Unlock()
 
-	fmt.Println("Start handling client connection with userID: %s", userID)
+	fmt.Println("Start handling client connection with userID: %d", userID)
 	go server.handleConnection(connection)
+
 	return nil
 }
 
@@ -94,7 +96,7 @@ func (server *Server) Stop() error {
 	for userID, connection := range server.connections {
 		err := connection.Close()
 		if err != nil {
-			fmt.Errorf("Error closing connection for client with user_id %s: %s", userID, err.Error())
+			fmt.Errorf("Error closing connection for client with user_id %d: %s", userID, err.Error())
 			allErrors = multierror.Append(allErrors, err)
 		}
 	}
@@ -108,24 +110,25 @@ func (server *Server) Stop() error {
 	return allErrors.ErrorOrNil()
 }
 
-var handleWhoAmIRequest = func(server *Server, clientConnection net.Conn) {
-	for userID, connection := range server.connections {
-		if connection == clientConnection {
+var handleWhoAmIRequest = func(server *Server, connection net.Conn) {
+	for userID, conn := range server.connections {
+		if conn == connection {
 			userIDBytes := make([]byte, 8)
 			binary.LittleEndian.PutUint64(userIDBytes, userID)
-			_, err := clientConnection.Write(userIDBytes)
+			_, err := connection.Write(userIDBytes)
 			if err != nil {
-				fmt.Errorf("Error sending `who_am_i` response to client with user_id %s: %s", userID, err.Error())
+				fmt.Errorf("Error sending `who_am_i` response to client with user_id %d: %s", userID, err.Error())
+				return
 			}
 		}
 	}
 }
 
-var handleListClientIDsRequest = func(server *Server, clientConnection net.Conn) {
+var handleListClientIDsRequest = func(server *Server, connection net.Conn) {
 	var userIDs []uint64
 
-	for userID, connection := range server.connections {
-		if connection != clientConnection {
+	for userID, conn := range server.connections {
+		if conn != connection {
 			userIDs = append(userIDs, userID)
 		}
 	}
@@ -135,10 +138,72 @@ var handleListClientIDsRequest = func(server *Server, clientConnection net.Conn)
 	err := gobBuffer.Encode(userIDs)
 	if err != nil {
 		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
+		return
 	}
 
-	_, err = clientConnection.Write(buffer.Bytes())
+	_, err = connection.Write(buffer.Bytes())
 	if err != nil {
 		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
+		return
+	}
+}
+
+var handleRelayRequest = func(server *Server, connection net.Conn) {
+	receiverListLengthBuffer := make([]byte, 1)
+	_, err := connection.Read(receiverListLengthBuffer)
+	if err != nil {
+		fmt.Errorf("Error in `relay` reading receiver list length: %s", err.Error())
+		return
+	}
+
+	receiverListLength, err := binary.ReadUvarint(bytes.NewBuffer(receiverListLengthBuffer))
+	if err != nil {
+		fmt.Errorf("Error in `relay` incorrect receiver list length: %s", err.Error())
+		return
+	}
+
+	receiversBuffer := make([]byte, receiverListLength)
+	_, err = connection.Read(receiversBuffer)
+	if err != nil {
+		fmt.Errorf("Error in `relay` reading receivers list: %s", err.Error())
+		return
+	}
+
+	var receivers []uint64
+	var buffer bytes.Buffer
+	gobBuffer := gob.NewDecoder(&buffer)
+	err = gobBuffer.Decode(receivers)
+	if err != nil {
+		fmt.Errorf("Error in `relay` decoding receivers: %s", err.Error())
+		return
+	}
+
+	messageLengthBuffer := make([]byte, 1)
+	_, err = connection.Read(messageLengthBuffer)
+	if err != nil {
+		fmt.Errorf("Error in `relay` reading message length: %s", err.Error())
+		return
+	}
+
+	messageLength, err := binary.ReadUvarint(bytes.NewBuffer(receiverListLengthBuffer))
+	if err != nil {
+		fmt.Errorf("Error in `relay` incorrect message length: %s", err.Error())
+		return
+	}
+
+	messageBuffer := make([]byte, messageLength)
+	_, err = connection.Read(messageBuffer)
+	if err != nil {
+		fmt.Errorf("Error in `relay` reading message: %s", err.Error())
+		return
+	}
+
+	for _, receiver := range receivers {
+		if conn, ok := server.connections[receiver]; ok {
+			_, err = conn.Write(messageBuffer)
+			if err != nil {
+				fmt.Errorf("Error relaying message to receiver %d: %s", receiver, err.Error())
+			}
+		}
 	}
 }
