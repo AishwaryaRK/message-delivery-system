@@ -4,6 +4,7 @@ import (
 	"../utility"
 	"bytes"
 	"encoding/binary"
+	"encoding/gob"
 	"fmt"
 	"github.com/hashicorp/go-multierror"
 	"net"
@@ -14,6 +15,7 @@ const PORT = "9000"
 
 var MESSAGE_TYPES = map[string]func(server *Server, c net.Conn){
 	"who_am_i":    handleWhoAmIRequest,
+	"who_is_here": handleListClientIDsRequest,
 }
 
 type Server struct {
@@ -119,3 +121,24 @@ var handleWhoAmIRequest = func(server *Server, clientConnection net.Conn) {
 	}
 }
 
+var handleListClientIDsRequest = func(server *Server, clientConnection net.Conn) {
+	var userIDs []uint64
+
+	for userID, connection := range server.connections {
+		if connection != clientConnection {
+			userIDs = append(userIDs, userID)
+		}
+	}
+
+	var buffer bytes.Buffer
+	gobBuffer := gob.NewEncoder(&buffer)
+	err := gobBuffer.Encode(userIDs)
+	if err != nil {
+		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
+	}
+
+	_, err = clientConnection.Write(buffer.Bytes())
+	if err != nil {
+		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
+	}
+}
