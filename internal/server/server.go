@@ -18,7 +18,7 @@ var MESSAGE_TYPES = map[string]func(server *Server, c net.Conn){
 
 type Server struct {
 	listener    net.Listener
-	connections map[string]net.Conn
+	connections map[uint64]net.Conn
 	mutex       sync.Mutex
 }
 
@@ -29,7 +29,7 @@ func New() *Server {
 		return nil
 	}
 
-	return &Server{listener: listener, connections: make(map[string]net.Conn), mutex: sync.Mutex{}}
+	return &Server{listener: listener, connections: make(map[uint64]net.Conn), mutex: sync.Mutex{}}
 }
 
 func (server *Server) Start(laddr *net.TCPAddr) error {
@@ -40,7 +40,7 @@ func (server *Server) Start(laddr *net.TCPAddr) error {
 	}
 
 	server.mutex.Lock()
-	userID, err := utility.GenerateUUID()
+	userID := utility.GenerateID()
 	if err != nil {
 		fmt.Errorf("Error generating userID: %s", err.Error())
 		server.mutex.Unlock()
@@ -109,7 +109,9 @@ func (server *Server) Stop() error {
 var handleWhoAmIRequest = func(server *Server, clientConnection net.Conn) {
 	for userID, connection := range server.connections {
 		if connection == clientConnection {
-			_, err := clientConnection.Write([]byte(userID))
+			userIDBytes := make([]byte, 8)
+			binary.LittleEndian.PutUint64(userIDBytes, userID)
+			_, err := clientConnection.Write(userIDBytes)
 			if err != nil {
 				fmt.Errorf("Error sending `who_am_i` response to client with user_id %s: %s", userID, err.Error())
 			}
