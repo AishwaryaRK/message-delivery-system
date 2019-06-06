@@ -107,7 +107,7 @@ func (client *Client) ListClientIDs() ([]uint64, error) {
 
 	var buffer bytes.Buffer
 	gobBuffer := gob.NewDecoder(&buffer)
-	err = gobBuffer.Decode(userIDs)
+	err = gobBuffer.Decode(&userIDs)
 	if err != nil {
 		fmt.Errorf("Error in `who_is_here` response decoding userIDs: %s", err.Error())
 		return userIDs, err

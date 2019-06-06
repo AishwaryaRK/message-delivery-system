@@ -47,11 +47,10 @@ func (server *Server) Start(laddr *net.TCPAddr) error {
 			server.mutex.Lock()
 			userID := utility.GenerateID()
 			server.connections[userID] = connection
-			server.mutex.Unlock()
 
 			fmt.Printf("Start handling client connection with userID: %d\n", userID)
 			go server.handleConnection(connection)
-
+			server.mutex.Unlock()
 		}
 	}()
 
@@ -141,7 +140,7 @@ var handleListClientIDsRequest = func(server *Server, connection net.Conn) {
 		return
 	}
 
-	_, err = connection.Write([]byte{byte(len(userIDs))})
+	_, err = connection.Write([]byte{byte(len(buffer.Bytes()))})
 	if err != nil {
 		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
 		return
@@ -178,7 +177,7 @@ var handleRelayRequest = func(server *Server, connection net.Conn) {
 	var receivers []uint64
 	var buffer bytes.Buffer
 	gobBuffer := gob.NewDecoder(&buffer)
-	err = gobBuffer.Decode(receivers)
+	err = gobBuffer.Decode(&receivers)
 	if err != nil {
 		fmt.Errorf("Error in `relay` decoding receivers: %s", err.Error())
 		return
