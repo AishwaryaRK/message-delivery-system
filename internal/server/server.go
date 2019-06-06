@@ -1,7 +1,6 @@
 package server
 
 import (
-	"../utility"
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
@@ -9,9 +8,8 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"net"
 	"sync"
+	"unity/message-delivery-system/internal/utility"
 )
-
-const PORT = "9000"
 
 var MESSAGE_TYPES = map[string]func(server *Server, c net.Conn){
 	"who_am_i":    handleWhoAmIRequest,
@@ -26,34 +24,36 @@ type Server struct {
 }
 
 func New() *Server {
-	listener, err := net.Listen("tcp", PORT)
-	if err != nil {
-		fmt.Errorf(err.Error())
-		return nil
-	}
-
-	return &Server{listener: listener, connections: make(map[uint64]net.Conn), mutex: sync.Mutex{}}
+	return &Server{listener: nil, connections: make(map[uint64]net.Conn), mutex: sync.Mutex{}}
 }
 
 func (server *Server) Start(laddr *net.TCPAddr) error {
-	connection, err := server.listener.Accept()
+	listener, err := net.Listen("tcp", laddr.String())
 	if err != nil {
-		fmt.Errorf("Error accepting a client connection: %s", err.Error())
+		fmt.Errorf(err.Error())
 		return err
 	}
 
-	server.mutex.Lock()
-	userID := utility.GenerateID()
-	if err != nil {
-		fmt.Errorf("Error generating userID: %s", err.Error())
-		server.mutex.Unlock()
-		return err
-	}
-	server.connections[userID] = connection
-	server.mutex.Unlock()
+	server.listener = listener
 
-	fmt.Println("Start handling client connection with userID: %d", userID)
-	go server.handleConnection(connection)
+	go func() {
+		for {
+			connection, err := server.listener.Accept()
+			if err != nil {
+				fmt.Errorf("Error accepting a client connection: %s", err.Error())
+				continue
+			}
+
+			server.mutex.Lock()
+			userID := utility.GenerateID()
+			server.connections[userID] = connection
+			server.mutex.Unlock()
+
+			fmt.Printf("Start handling client connection with userID: %d\n", userID)
+			go server.handleConnection(connection)
+
+		}
+	}()
 
 	return nil
 }
