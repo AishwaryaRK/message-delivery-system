@@ -26,7 +26,7 @@ type Server struct {
 }
 
 func New() *Server {
-	listener, err := net.Listen("tcp4", PORT)
+	listener, err := net.Listen("tcp", PORT)
 	if err != nil {
 		fmt.Errorf(err.Error())
 		return nil
@@ -56,6 +56,26 @@ func (server *Server) Start(laddr *net.TCPAddr) error {
 	go server.handleConnection(connection)
 
 	return nil
+}
+
+func (server *Server) Stop() error {
+	var allErrors *multierror.Error
+
+	for userID, connection := range server.connections {
+		err := connection.Close()
+		if err != nil {
+			fmt.Errorf("Error closing connection for client with user_id %d: %s", userID, err.Error())
+			allErrors = multierror.Append(allErrors, err)
+		}
+	}
+
+	err := server.listener.Close()
+	if err != nil {
+		fmt.Errorf("Error closing server: %s", err.Error())
+		allErrors = multierror.Append(allErrors, err)
+	}
+
+	return allErrors.ErrorOrNil()
 }
 
 func (server *Server) handleConnection(connection net.Conn) {
@@ -90,26 +110,6 @@ func (server *Server) handleConnection(connection net.Conn) {
 	}
 }
 
-func (server *Server) Stop() error {
-	var allErrors *multierror.Error
-
-	for userID, connection := range server.connections {
-		err := connection.Close()
-		if err != nil {
-			fmt.Errorf("Error closing connection for client with user_id %d: %s", userID, err.Error())
-			allErrors = multierror.Append(allErrors, err)
-		}
-	}
-
-	err := server.listener.Close()
-	if err != nil {
-		fmt.Errorf("Error closing server: %s", err.Error())
-		allErrors = multierror.Append(allErrors, err)
-	}
-
-	return allErrors.ErrorOrNil()
-}
-
 var handleWhoAmIRequest = func(server *Server, connection net.Conn) {
 	for userID, conn := range server.connections {
 		if conn == connection {
@@ -136,6 +136,12 @@ var handleListClientIDsRequest = func(server *Server, connection net.Conn) {
 	var buffer bytes.Buffer
 	gobBuffer := gob.NewEncoder(&buffer)
 	err := gobBuffer.Encode(userIDs)
+	if err != nil {
+		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
+		return
+	}
+
+	_, err = connection.Write([]byte{byte(len(userIDs))})
 	if err != nil {
 		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
 		return
