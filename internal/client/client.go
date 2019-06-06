@@ -101,3 +101,55 @@ func (client *Client) ListClientIDs() ([]uint64, error) {
 
 	return userIDs, nil
 }
+
+func (client *Client) SendMsg(recipients []uint64, body []byte) error {
+	var buffer bytes.Buffer
+	gobBuffer := gob.NewEncoder(&buffer)
+	err := gobBuffer.Encode(recipients)
+	if err != nil {
+		fmt.Errorf("Error encoding recipients: %s", err.Error())
+		return err
+	}
+
+	messageType := "relay"
+	messageTypeLength := len(messageType)
+
+	_, err = client.connection.Write([]byte{byte(messageTypeLength)})
+	if err != nil {
+		fmt.Errorf("Error sending `relay` request to server: %s", err.Error())
+		return err
+	}
+
+	_, err = client.connection.Write([]byte(messageType))
+	if err != nil {
+		fmt.Errorf("Error sending `relay` request to server: %s", err.Error())
+		return err
+	}
+
+	_, err = client.connection.Write([]byte{byte(len(recipients))})
+	if err != nil {
+		fmt.Errorf("Error sending `relay` request to server: %s", err.Error())
+		return err
+	}
+
+	_, err = client.connection.Write(buffer.Bytes())
+	if err != nil {
+		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
+		return err
+	}
+
+	messageLength := len(body)
+	_, err = client.connection.Write([]byte{byte(messageLength)})
+	if err != nil {
+		fmt.Errorf("Error sending `relay` request to server: %s", err.Error())
+		return err
+	}
+
+	_, err = client.connection.Write(body)
+	if err != nil {
+		fmt.Errorf("Error sending `relay` request to server: %s", err.Error())
+		return err
+	}
+
+	return nil
+}
