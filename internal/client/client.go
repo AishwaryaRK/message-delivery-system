@@ -32,6 +32,15 @@ func (client *Client) Connect(serverAddr *net.TCPAddr) error {
 	return nil
 }
 
+func (client *Client) Close() error {
+	err := client.connection.Close()
+	if err != nil {
+		fmt.Errorf("Error closing connection for client: %s", err.Error())
+	}
+
+	return err
+}
+
 func (client *Client) WhoAmI() (uint64, error) {
 	var userID uint64
 	messageType := "who_am_i"
