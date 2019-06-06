@@ -8,6 +8,11 @@ import (
 	"net"
 )
 
+type IncomingMessage struct {
+	SenderID uint64
+	Body     []byte
+}
+
 type Client struct {
 	connection net.Conn
 }
@@ -50,8 +55,8 @@ func (client *Client) WhoAmI() (uint64, error) {
 		fmt.Errorf("Error reading userID from server: %s", err.Error())
 		return userID, err
 	}
-
 	userID = binary.LittleEndian.Uint64(userIDBuffer)
+
 	return userID, nil
 }
 
@@ -138,7 +143,8 @@ func (client *Client) SendMsg(recipients []uint64, body []byte) error {
 		return err
 	}
 
-	messageLength := len(body)
+	var messageLength int32
+	messageLength = int32(len(body))
 	_, err = client.connection.Write([]byte{byte(messageLength)})
 	if err != nil {
 		fmt.Errorf("Error sending `relay` request to server: %s", err.Error())
@@ -152,4 +158,37 @@ func (client *Client) SendMsg(recipients []uint64, body []byte) error {
 	}
 
 	return nil
+}
+
+func (client *Client) HandleIncomingMessages(writeCh chan<- IncomingMessage) {
+	senderIDBuffer := make([]byte, 8)
+	_, err := client.connection.Read(senderIDBuffer)
+	if err != nil {
+		fmt.Errorf("Error reading senderID from server: %s", err.Error())
+		return
+	}
+	senderID := binary.LittleEndian.Uint64(senderIDBuffer)
+
+	messageLengthBuffer := make([]byte, 4)
+	_, err = client.connection.Read(messageLengthBuffer)
+	if err != nil {
+		fmt.Errorf("Error in `incoming_message` reading message length: %s", err.Error())
+		return
+	}
+	messageLength, err := binary.ReadUvarint(bytes.NewBuffer(messageLengthBuffer))
+	if err != nil {
+		fmt.Errorf("Error in `incoming_message` incorrect message length: %s", err.Error())
+		return
+	}
+
+	messageBuffer := make([]byte, messageLength)
+	_, err = client.connection.Read(messageBuffer)
+	if err != nil {
+		fmt.Errorf("Error in `incoming_message` reading message: %s", err.Error())
+		return
+	}
+
+	incomingMessage := IncomingMessage{SenderID: senderID, Body: messageBuffer}
+
+	writeCh <- incomingMessage
 }

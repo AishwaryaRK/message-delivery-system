@@ -184,14 +184,14 @@ var handleRelayRequest = func(server *Server, connection net.Conn) {
 		return
 	}
 
-	messageLengthBuffer := make([]byte, 1)
+	messageLengthBuffer := make([]byte, 4)
 	_, err = connection.Read(messageLengthBuffer)
 	if err != nil {
 		fmt.Errorf("Error in `relay` reading message length: %s", err.Error())
 		return
 	}
 
-	messageLength, err := binary.ReadUvarint(bytes.NewBuffer(receiverListLengthBuffer))
+	messageLength, err := binary.ReadUvarint(bytes.NewBuffer(messageLengthBuffer))
 	if err != nil {
 		fmt.Errorf("Error in `relay` incorrect message length: %s", err.Error())
 		return
@@ -204,11 +204,34 @@ var handleRelayRequest = func(server *Server, connection net.Conn) {
 		return
 	}
 
+	var senderID uint64
+	for userID, conn := range server.connections {
+		if conn == connection {
+			senderID = userID
+			break
+		}
+	}
+
 	for _, receiver := range receivers {
 		if conn, ok := server.connections[receiver]; ok {
+			senderIDBytes := make([]byte, 8)
+			binary.LittleEndian.PutUint64(senderIDBytes, senderID)
+			_, err := connection.Write(senderIDBytes)
+			if err != nil {
+				fmt.Errorf("Error relaying message to receiver %d: %s", receiver, err.Error())
+				return
+			}
+
+			_, err = connection.Write(messageLengthBuffer)
+			if err != nil {
+				fmt.Errorf("Error relaying message to receiver %d: %s", receiver, err.Error())
+				return
+			}
+
 			_, err = conn.Write(messageBuffer)
 			if err != nil {
 				fmt.Errorf("Error relaying message to receiver %d: %s", receiver, err.Error())
+				return
 			}
 		}
 	}
