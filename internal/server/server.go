@@ -166,7 +166,6 @@ var handleRelayRequest = func(server *Server, connection net.Conn) {
 		fmt.Errorf("Error in `relay` incorrect receiver list length: %s", err.Error())
 		return
 	}
-
 	receiversBuffer := make([]byte, receiverListLength)
 	_, err = connection.Read(receiversBuffer)
 	if err != nil {
@@ -175,8 +174,7 @@ var handleRelayRequest = func(server *Server, connection net.Conn) {
 	}
 
 	var receivers []uint64
-	var buffer bytes.Buffer
-	gobBuffer := gob.NewDecoder(&buffer)
+	gobBuffer := gob.NewDecoder(bytes.NewBuffer(receiversBuffer))
 	err = gobBuffer.Decode(&receivers)
 	if err != nil {
 		fmt.Errorf("Error in `relay` decoding receivers: %s", err.Error())
@@ -189,13 +187,11 @@ var handleRelayRequest = func(server *Server, connection net.Conn) {
 		fmt.Errorf("Error in `relay` reading message length: %s", err.Error())
 		return
 	}
-
 	messageLength, err := binary.ReadUvarint(bytes.NewBuffer(messageLengthBuffer))
 	if err != nil {
 		fmt.Errorf("Error in `relay` incorrect message length: %s", err.Error())
 		return
 	}
-
 	messageBuffer := make([]byte, messageLength)
 	_, err = connection.Read(messageBuffer)
 	if err != nil {
@@ -215,13 +211,13 @@ var handleRelayRequest = func(server *Server, connection net.Conn) {
 		if conn, ok := server.connections[receiver]; ok {
 			senderIDBytes := make([]byte, 8)
 			binary.LittleEndian.PutUint64(senderIDBytes, senderID)
-			_, err := connection.Write(senderIDBytes)
+			_, err := conn.Write(senderIDBytes)
 			if err != nil {
 				fmt.Errorf("Error relaying message to receiver %d: %s", receiver, err.Error())
 				return
 			}
 
-			_, err = connection.Write(messageLengthBuffer)
+			_, err = conn.Write(messageLengthBuffer)
 			if err != nil {
 				fmt.Errorf("Error relaying message to receiver %d: %s", receiver, err.Error())
 				return

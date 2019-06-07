@@ -140,7 +140,8 @@ func (client *Client) SendMsg(recipients []uint64, body []byte) error {
 		return err
 	}
 
-	_, err = client.connection.Write([]byte{byte(len(recipients))})
+	recipientsLength := len(buffer.Bytes())
+	_, err = client.connection.Write([]byte{byte(recipientsLength)})
 	if err != nil {
 		fmt.Errorf("Error sending `relay` request to server: %s", err.Error())
 		return err
@@ -152,9 +153,12 @@ func (client *Client) SendMsg(recipients []uint64, body []byte) error {
 		return err
 	}
 
-	var messageLength int32
-	messageLength = int32(len(body))
-	_, err = client.connection.Write([]byte{byte(messageLength)})
+	var messageLength uint32
+	messageLength = uint32(len(body))
+
+	msgLengthBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(msgLengthBytes, messageLength)
+	_, err = client.connection.Write(msgLengthBytes)
 	if err != nil {
 		fmt.Errorf("Error sending `relay` request to server: %s", err.Error())
 		return err

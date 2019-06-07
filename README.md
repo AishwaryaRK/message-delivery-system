@@ -28,17 +28,17 @@ including both the server(hub) and the client.
         
         [MessageTypeLength - 1 byte][MessasgeType]
         
+  - For response of message type: `who_am_i`, the protocol is:
+         
+         [userID - 8 bytes]
+         
+  - For response of message type: `who_is_here`, the protocol is:
+          
+          [userIDsLength - 1 byte][UserIDs]
+        
  - For request of message type: `relay`, the protocol is:
          
         [MessageTypeLength - 1 byte][MessasgeType][ReceiverListLength - 1 byte][Receivers][MessageLength - 4 bytes][Message]
-
- - For response of message type: `who_am_i`, the protocol is:
-        
-        [userID - 8 bytes]
-        
- - For response of message type: `who_is_here`, the protocol is:
-         
-         [userIDsLength - 1 byte][UserIDs]
        
  - For response of message type: `relay`, the protocol is:
          
