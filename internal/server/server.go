@@ -7,24 +7,22 @@ import (
 	"fmt"
 	"github.com/hashicorp/go-multierror"
 	"net"
-	"sync"
 	"unity/message-delivery-system/internal/utility"
 )
 
 var MESSAGE_TYPES = map[string]func(server *Server, c net.Conn){
 	"who_am_i":    handleWhoAmIRequest,
-	"who_is_here": handleListClientIDsRequest,
+	"who_is_here": handleWhoIsHereRequest,
 	"relay":       handleRelayRequest,
 }
 
 type Server struct {
 	listener    net.Listener
 	connections map[uint64]net.Conn
-	mutex       sync.Mutex
 }
 
 func New() *Server {
-	return &Server{listener: nil, connections: make(map[uint64]net.Conn), mutex: sync.Mutex{}}
+	return &Server{listener: nil, connections: make(map[uint64]net.Conn)}
 }
 
 func (server *Server) Start(laddr *net.TCPAddr) error {
@@ -44,13 +42,11 @@ func (server *Server) Start(laddr *net.TCPAddr) error {
 				continue
 			}
 
-			server.mutex.Lock()
 			userID := utility.GenerateID()
 			server.connections[userID] = connection
 
 			fmt.Printf("Start handling client connection with userID: %d\n", userID)
 			go server.handleConnection(connection)
-			server.mutex.Unlock()
 		}
 	}()
 
@@ -75,6 +71,16 @@ func (server *Server) Stop() error {
 	}
 
 	return allErrors.ErrorOrNil()
+}
+
+func (server *Server) ListClientIDs() []uint64 {
+	var userIDs []uint64
+
+	for userID, _ := range server.connections {
+		userIDs = append(userIDs, userID)
+	}
+
+	return userIDs
 }
 
 func (server *Server) handleConnection(connection net.Conn) {
@@ -123,7 +129,7 @@ var handleWhoAmIRequest = func(server *Server, connection net.Conn) {
 	}
 }
 
-var handleListClientIDsRequest = func(server *Server, connection net.Conn) {
+var handleWhoIsHereRequest = func(server *Server, connection net.Conn) {
 	var userIDs []uint64
 
 	for userID, conn := range server.connections {
