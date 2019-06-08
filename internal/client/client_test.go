@@ -156,32 +156,32 @@ func (s *ServerTestSuite) TestSendMsgRequest() {
 
 		receiverListLengthBuffer := make([]byte, 1)
 		_, err2 = connection.Read(receiverListLengthBuffer)
-		assert.NoError(s.T(), err2, "should not return error while reading messageType from client")
+		assert.NoError(s.T(), err2, "should not return error while reading receivers length from client")
 
 		receiverListLength, err2 := binary.ReadUvarint(bytes.NewBuffer(receiverListLengthBuffer))
-		assert.NoError(s.T(), err2, "should not return error while reading messageType from client")
+		assert.NoError(s.T(), err2, "should not get incorrect receivers length from client")
 
 		receiversBuffer := make([]byte, receiverListLength)
 		_, err2 = connection.Read(receiversBuffer)
-		assert.NoError(s.T(), err2, "should not return error while reading messageType from client")
+		assert.NoError(s.T(), err2, "should not return error while reading receivers from client")
 
 		var receivers []uint64
 		gobBuffer := gob.NewDecoder(bytes.NewBuffer(receiversBuffer))
 		err2 = gobBuffer.Decode(&receivers)
-		assert.NoError(s.T(), err2, "should not return error while reading messageType from client")
+		assert.NoError(s.T(), err2, "should not return error while decoding receivers from client")
 
 		assert.ElementsMatch(s.T(), expecteduserIDs, receivers)
 
 		messageLengthBuffer := make([]byte, 4)
 		_, err2 = connection.Read(messageLengthBuffer)
-		assert.NoError(s.T(), err2, "should not return error while reading messageType from client")
+		assert.NoError(s.T(), err2, "should not return error while reading message length from client")
 
 		messageLength, err2 := binary.ReadUvarint(bytes.NewBuffer(messageLengthBuffer))
-		assert.NoError(s.T(), err2, "should not return error while reading messageType from client")
+		assert.NoError(s.T(), err2, "should not get incorrect message length from client")
 
 		messageBuffer := make([]byte, messageLength)
 		_, err2 = connection.Read(messageBuffer)
-		assert.NoError(s.T(), err2, "should not return error while reading messageType from client")
+		assert.NoError(s.T(), err2, "should not return error while reading message from client")
 
 		assert.Equal(s.T(), expectedMessage, string(messageBuffer))
 		wg.Done()
@@ -195,6 +195,56 @@ func (s *ServerTestSuite) TestSendMsgRequest() {
 	err1 = s.client.SendMsg(expecteduserIDs, []byte(expectedMessage))
 	assert.NoError(s.T(), err1, "should not return error while sending message to peer clients")
 
+	wg.Wait()
+}
+
+func (s *ServerTestSuite) TestHandleIncomingMessages() {
+	serverPort := 9005
+	serverAddr := net.TCPAddr{Port: serverPort}
+	listener, err := net.Listen("tcp", serverAddr.String())
+	assert.NoError(s.T(), err, "should not return error while creating server")
+
+	expectedMessage := "Hello Receiver!"
+	expectedSenderID := uint64(764354876876673)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	var connection net.Conn
+	go func() {
+		var err2 error
+		connection, err2 = listener.Accept()
+		assert.NoError(s.T(), err2, "should not return error while accepting client connection")
+
+		senderIDBytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(senderIDBytes, expectedSenderID)
+		_, err2 = connection.Write(senderIDBytes)
+		assert.NoError(s.T(), err2, "should not return error while sending senderID to client")
+
+		var messageLength uint32
+		messageLength = uint32(len(expectedMessage))
+		msgLengthBytes := make([]byte, 4)
+		binary.LittleEndian.PutUint32(msgLengthBytes, messageLength)
+		_, err = connection.Write(msgLengthBytes)
+		assert.NoError(s.T(), err2, "should not return error while sending message length to client")
+
+		_, err = connection.Write([]byte(expectedMessage))
+		assert.NoError(s.T(), err2, "should not return error while sending message to client")
+
+		wg.Done()
+	}()
+
+	time.Sleep(1 * time.Second)
+
+	err1 := s.client.Connect(&serverAddr)
+	assert.NoError(s.T(), err1, "should not return error while creating client")
+
+	writeCh := make(chan IncomingMessage, 1)
+	s.client.HandleIncomingMessages(writeCh)
+	assert.NoError(s.T(), err1, "should not return error while sending message to peer clients")
+
+	incomingMessage := <-writeCh
+	assert.Equal(s.T(), expectedSenderID, incomingMessage.SenderID)
+	assert.Equal(s.T(), expectedMessage, string(incomingMessage.Body))
 	wg.Wait()
 }
 

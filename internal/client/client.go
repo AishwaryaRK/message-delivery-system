@@ -200,6 +200,5 @@ func (client *Client) HandleIncomingMessages(writeCh chan<- IncomingMessage) {
 	}
 
 	incomingMessage := IncomingMessage{SenderID: senderID, Body: messageBuffer}
-
 	writeCh <- incomingMessage
 }
