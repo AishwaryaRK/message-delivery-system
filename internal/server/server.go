@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/hashicorp/go-multierror"
 	"net"
+	"sync"
 	"unity/message-delivery-system/internal/utility"
 )
 
@@ -18,11 +19,11 @@ var MESSAGE_TYPES = map[string]func(server *Server, c net.Conn){
 
 type Server struct {
 	listener    net.Listener
-	connections map[uint64]net.Conn
+	connections sync.Map
 }
 
 func New() *Server {
-	return &Server{listener: nil, connections: make(map[uint64]net.Conn)}
+	return &Server{listener: nil, connections: sync.Map{}}
 }
 
 func (server *Server) Start(laddr *net.TCPAddr) error {
@@ -43,7 +44,7 @@ func (server *Server) Start(laddr *net.TCPAddr) error {
 			}
 
 			userID := utility.GenerateID()
-			server.connections[userID] = connection
+			server.connections.Store(userID, connection)
 
 			fmt.Printf("Start handling client connection with userID: %d\n", userID)
 			go server.handleConnection(connection)
@@ -56,13 +57,15 @@ func (server *Server) Start(laddr *net.TCPAddr) error {
 func (server *Server) Stop() error {
 	var allErrors *multierror.Error
 
-	for userID, connection := range server.connections {
-		err := connection.Close()
+	server.connections.Range(func(userID, connection interface{}) bool {
+		conn := connection.(net.Conn)
+		err := conn.Close()
 		if err != nil {
 			fmt.Errorf("Error closing connection for client with user_id %d: %s", userID, err.Error())
 			allErrors = multierror.Append(allErrors, err)
 		}
-	}
+		return true
+	})
 
 	err := server.listener.Close()
 	if err != nil {
@@ -76,9 +79,10 @@ func (server *Server) Stop() error {
 func (server *Server) ListClientIDs() []uint64 {
 	var userIDs []uint64
 
-	for userID, _ := range server.connections {
-		userIDs = append(userIDs, userID)
-	}
+	server.connections.Range(func(userID, connection interface{}) bool {
+		userIDs = append(userIDs, userID.(uint64))
+		return true
+	})
 
 	return userIDs
 }
@@ -115,28 +119,32 @@ func (server *Server) handleConnection(connection net.Conn) {
 	}
 }
 
-var handleWhoAmIRequest = func(server *Server, connection net.Conn) {
-	for userID, conn := range server.connections {
-		if conn == connection {
+var handleWhoAmIRequest = func(server *Server, clientConnection net.Conn) {
+	server.connections.Range(func(userID, connection interface{}) bool {
+		conn := connection.(net.Conn)
+		if conn == clientConnection {
 			userIDBytes := make([]byte, 8)
-			binary.LittleEndian.PutUint64(userIDBytes, userID)
-			_, err := connection.Write(userIDBytes)
+			binary.LittleEndian.PutUint64(userIDBytes, userID.(uint64))
+			_, err := clientConnection.Write(userIDBytes)
 			if err != nil {
 				fmt.Errorf("Error sending `who_am_i` response to client with user_id %d: %s", userID, err.Error())
-				return
 			}
+			return false
 		}
-	}
+		return true
+	})
 }
 
-var handleWhoIsHereRequest = func(server *Server, connection net.Conn) {
+var handleWhoIsHereRequest = func(server *Server, clientConnection net.Conn) {
 	var userIDs []uint64
 
-	for userID, conn := range server.connections {
-		if conn != connection {
-			userIDs = append(userIDs, userID)
+	server.connections.Range(func(userID, connection interface{}) bool {
+		conn := connection.(net.Conn)
+		if conn != clientConnection {
+			userIDs = append(userIDs, userID.(uint64))
 		}
-	}
+		return true
+	})
 
 	var buffer bytes.Buffer
 	gobBuffer := gob.NewEncoder(&buffer)
@@ -146,22 +154,22 @@ var handleWhoIsHereRequest = func(server *Server, connection net.Conn) {
 		return
 	}
 
-	_, err = connection.Write([]byte{byte(len(buffer.Bytes()))})
+	_, err = clientConnection.Write([]byte{byte(len(buffer.Bytes()))})
 	if err != nil {
 		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
 		return
 	}
 
-	_, err = connection.Write(buffer.Bytes())
+	_, err = clientConnection.Write(buffer.Bytes())
 	if err != nil {
 		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
 		return
 	}
 }
 
-var handleRelayRequest = func(server *Server, connection net.Conn) {
+var handleRelayRequest = func(server *Server, clientConnection net.Conn) {
 	receiverListLengthBuffer := make([]byte, 1)
-	_, err := connection.Read(receiverListLengthBuffer)
+	_, err := clientConnection.Read(receiverListLengthBuffer)
 	if err != nil {
 		fmt.Errorf("Error in `relay` reading receiver list length: %s", err.Error())
 		return
@@ -173,7 +181,7 @@ var handleRelayRequest = func(server *Server, connection net.Conn) {
 		return
 	}
 	receiversBuffer := make([]byte, receiverListLength)
-	_, err = connection.Read(receiversBuffer)
+	_, err = clientConnection.Read(receiversBuffer)
 	if err != nil {
 		fmt.Errorf("Error in `relay` reading receivers list: %s", err.Error())
 		return
@@ -188,7 +196,7 @@ var handleRelayRequest = func(server *Server, connection net.Conn) {
 	}
 
 	messageLengthBuffer := make([]byte, 4)
-	_, err = connection.Read(messageLengthBuffer)
+	_, err = clientConnection.Read(messageLengthBuffer)
 	if err != nil {
 		fmt.Errorf("Error in `relay` reading message length: %s", err.Error())
 		return
@@ -199,22 +207,25 @@ var handleRelayRequest = func(server *Server, connection net.Conn) {
 		return
 	}
 	messageBuffer := make([]byte, messageLength)
-	_, err = connection.Read(messageBuffer)
+	_, err = clientConnection.Read(messageBuffer)
 	if err != nil {
 		fmt.Errorf("Error in `relay` reading message: %s", err.Error())
 		return
 	}
 
 	var senderID uint64
-	for userID, conn := range server.connections {
-		if conn == connection {
-			senderID = userID
-			break
+	server.connections.Range(func(userID, connection interface{}) bool {
+		conn := connection.(net.Conn)
+		if conn == clientConnection {
+			senderID = userID.(uint64)
+			return false
 		}
-	}
+		return true
+	})
 
 	for _, receiver := range receivers {
-		if conn, ok := server.connections[receiver]; ok {
+		if connection, ok := server.connections.Load(receiver); ok {
+			conn := connection.(net.Conn)
 			senderIDBytes := make([]byte, 8)
 			binary.LittleEndian.PutUint64(senderIDBytes, senderID)
 			_, err := conn.Write(senderIDBytes)
