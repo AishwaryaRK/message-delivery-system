@@ -6,12 +6,12 @@ import (
 	"net"
 	"testing"
 	"time"
-	"unity/message-delivery-system/internal/client"
-	"unity/message-delivery-system/internal/server"
+	"message-delivery-system/internal/client"
+	"message-delivery-system/internal/server"
 )
 
 const clientCount = 10
-const benchmarkServerPort = 5000
+const benchmarkServerPort = 50001
 
 func TestBenchmark(t *testing.T) {
 	srv := server.New()

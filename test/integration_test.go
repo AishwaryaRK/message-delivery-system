@@ -5,11 +5,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"net"
 	"testing"
-	"unity/message-delivery-system/internal/client"
-	"unity/message-delivery-system/internal/server"
+	"message-delivery-system/internal/client"
+	"message-delivery-system/internal/server"
 )
 
-const serverPort = 50000
+const serverPort = 50002
 
 func TestIntegration(t *testing.T) {
 	srv := server.New()

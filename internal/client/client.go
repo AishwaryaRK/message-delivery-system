@@ -48,15 +48,9 @@ func (client *Client) Close() error {
 
 func (client *Client) WhoAmI() (uint64, error) {
 	var userID uint64
-	messageType := "who_am_i"
-	messageTypeLength := len(messageType)
-	_, err := client.connection.Write([]byte{byte(messageTypeLength)})
-	if err != nil {
-		fmt.Errorf("Error sending `who_am_i` request to server: %s", err.Error())
-		return userID, err
-	}
+	requestType := "who_am_i"
 
-	_, err = client.connection.Write([]byte(messageType))
+	err := client.sendRequestTypeToServer(requestType)
 	if err != nil {
 		fmt.Errorf("Error sending `who_am_i` request to server: %s", err.Error())
 		return userID, err
@@ -77,16 +71,9 @@ func (client *Client) WhoAmI() (uint64, error) {
 
 func (client *Client) ListClientIDs() ([]uint64, error) {
 	var userIDs []uint64
-	messageType := "who_is_here"
-	messageTypeLength := len(messageType)
+	requestType := "who_is_here"
 
-	_, err := client.connection.Write([]byte{byte(messageTypeLength)})
-	if err != nil {
-		fmt.Errorf("Error sending `who_is_here` request to server: %s", err.Error())
-		return userIDs, err
-	}
-
-	_, err = client.connection.Write([]byte(messageType))
+	err := client.sendRequestTypeToServer(requestType)
 	if err != nil {
 		fmt.Errorf("Error sending `who_is_here` request to server: %s", err.Error())
 		return userIDs, err
@@ -126,37 +113,30 @@ func (client *Client) ListClientIDs() ([]uint64, error) {
 }
 
 func (client *Client) SendMsg(recipients []uint64, body []byte) error {
-	var buffer bytes.Buffer
-	gobBuffer := gob.NewEncoder(&buffer)
+	var recipientsBuffer bytes.Buffer
+	gobBuffer := gob.NewEncoder(&recipientsBuffer)
 	err := gobBuffer.Encode(recipients)
 	if err != nil {
 		fmt.Errorf("Error encoding recipients: %s", err.Error())
 		return err
 	}
 
-	messageType := "relay"
-	messageTypeLength := len(messageType)
+	requestType := "relay"
 
-	_, err = client.connection.Write([]byte{byte(messageTypeLength)})
+	err = client.sendRequestTypeToServer(requestType)
 	if err != nil {
 		fmt.Errorf("Error sending `relay` request to server: %s", err.Error())
 		return err
 	}
 
-	_, err = client.connection.Write([]byte(messageType))
-	if err != nil {
-		fmt.Errorf("Error sending `relay` request to server: %s", err.Error())
-		return err
-	}
-
-	recipientsLength := len(buffer.Bytes())
+	recipientsLength := len(recipientsBuffer.Bytes())
 	_, err = client.connection.Write([]byte{byte(recipientsLength)})
 	if err != nil {
 		fmt.Errorf("Error sending `relay` request to server: %s", err.Error())
 		return err
 	}
 
-	_, err = client.connection.Write(buffer.Bytes())
+	_, err = client.connection.Write(recipientsBuffer.Bytes())
 	if err != nil {
 		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
 		return err
@@ -210,6 +190,7 @@ func (client *Client) HandleIncomingMessages(writeCh chan<- IncomingMessage) {
 		}
 		var messageLength uint32
 		messageLength = binary.LittleEndian.Uint32(messageLengthBuffer)
+
 		messageBuffer := make([]byte, messageLength)
 		client.mutex.RLock()
 		_, err = client.connection.Read(messageBuffer)
@@ -223,4 +204,19 @@ func (client *Client) HandleIncomingMessages(writeCh chan<- IncomingMessage) {
 
 		writeCh <- incomingMessage
 	}
+}
+
+func (client *Client) sendRequestTypeToServer(messageType string) error {
+	messageTypeLength := len(messageType)
+	_, err := client.connection.Write([]byte{byte(messageTypeLength)})
+	if err != nil {
+		return err
+	}
+
+	_, err = client.connection.Write([]byte(messageType))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

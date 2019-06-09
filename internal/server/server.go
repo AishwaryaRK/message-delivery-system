@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"net"
 	"sync"
-	"unity/message-delivery-system/internal/utility"
+	"message-delivery-system/internal/utility"
 )
 
 var MESSAGE_TYPES = map[string]func(server *Server, c net.Conn){
@@ -95,7 +95,6 @@ func (server *Server) handleConnection(connection net.Conn) {
 			fmt.Errorf("Error reading message type length: %s", err.Error())
 			continue
 		}
-
 		messageLength, err := binary.ReadUvarint(bytes.NewBuffer(messageTypeLengthBuffer))
 		if err != nil {
 			fmt.Errorf("Incorrect message type length: %s", err.Error())
@@ -108,7 +107,6 @@ func (server *Server) handleConnection(connection net.Conn) {
 			fmt.Errorf("Error reading message type: %s", err.Error())
 			continue
 		}
-
 		messageType := string(messageTypeBuffer)
 		if request, ok := MESSAGE_TYPES[messageType]; ok {
 			request(server, connection)
@@ -146,21 +144,21 @@ var handleWhoIsHereRequest = func(server *Server, clientConnection net.Conn) {
 		return true
 	})
 
-	var buffer bytes.Buffer
-	gobBuffer := gob.NewEncoder(&buffer)
+	var userIDsBuffer bytes.Buffer
+	gobBuffer := gob.NewEncoder(&userIDsBuffer)
 	err := gobBuffer.Encode(userIDs)
 	if err != nil {
 		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
 		return
 	}
 
-	_, err = clientConnection.Write([]byte{byte(len(buffer.Bytes()))})
+	_, err = clientConnection.Write([]byte{byte(len(userIDsBuffer.Bytes()))})
 	if err != nil {
 		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
 		return
 	}
 
-	_, err = clientConnection.Write(buffer.Bytes())
+	_, err = clientConnection.Write(userIDsBuffer.Bytes())
 	if err != nil {
 		fmt.Errorf("Error sending `who_is_here` response to client: %s", err.Error())
 		return
@@ -174,19 +172,18 @@ var handleRelayRequest = func(server *Server, clientConnection net.Conn) {
 		fmt.Errorf("Error in `relay` reading receiver list length: %s", err.Error())
 		return
 	}
-
 	receiverListLength, err := binary.ReadUvarint(bytes.NewBuffer(receiverListLengthBuffer))
 	if err != nil {
 		fmt.Errorf("Error in `relay` incorrect receiver list length: %s", err.Error())
 		return
 	}
+
 	receiversBuffer := make([]byte, receiverListLength)
 	_, err = clientConnection.Read(receiversBuffer)
 	if err != nil {
 		fmt.Errorf("Error in `relay` reading receivers list: %s", err.Error())
 		return
 	}
-
 	var receivers []uint64
 	gobBuffer := gob.NewDecoder(bytes.NewBuffer(receiversBuffer))
 	err = gobBuffer.Decode(&receivers)
@@ -201,7 +198,6 @@ var handleRelayRequest = func(server *Server, clientConnection net.Conn) {
 		fmt.Errorf("Error in `relay` reading message length: %s", err.Error())
 		return
 	}
-
 	var messageLength uint32
 	messageLength = binary.LittleEndian.Uint32(messageLengthBuffer)
 	messageBuffer := make([]byte, messageLength)

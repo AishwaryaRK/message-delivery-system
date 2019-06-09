@@ -4,10 +4,6 @@
 
 * [Introduction](#introduction)
 * [Protocol](#protocol)
-* [Assumptions/Decisions](#assumptionsdecisions)
-* [Setup](#setup)
-* [Running](#running-the-program)
-* [Testing](#testing-the-program)
 
 ## Introduction
 
@@ -40,14 +36,6 @@ including both the server(hub) and the client.
          
         [MessageTypeLength - 1 byte][MessasgeType][ReceiverListLength - 1 byte][Receivers][MessageLength - 4 bytes][Message]
        
- - For response of message type: `relay`, the protocol is:
+ - For response of message type: `relay` to receivers, the protocol is:
          
-         [userID - 8 bytes][MessageLength - 4 bytes][Message]
-        
-## Assumptions/Decisions
-
-## Setup
-
-## Running the program
-
-## Testing the program
+         [senderID - 8 bytes][MessageLength - 4 bytes][Message]
