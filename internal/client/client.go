@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"net"
+	"sync"
 )
 
 type IncomingMessage struct {
@@ -15,10 +16,11 @@ type IncomingMessage struct {
 
 type Client struct {
 	connection net.Conn
+	mutex      sync.RWMutex
 }
 
 func New() *Client {
-	return &Client{connection: nil}
+	return &Client{connection: nil, mutex: sync.RWMutex{}}
 }
 
 func (client *Client) Connect(serverAddr *net.TCPAddr) error {
@@ -28,7 +30,10 @@ func (client *Client) Connect(serverAddr *net.TCPAddr) error {
 		return err
 	}
 
+	client.mutex.Lock()
 	client.connection = connection
+	client.mutex.Unlock()
+
 	return nil
 }
 
@@ -58,7 +63,9 @@ func (client *Client) WhoAmI() (uint64, error) {
 	}
 
 	userIDBuffer := make([]byte, 8)
+	client.mutex.RLock()
 	_, err = client.connection.Read(userIDBuffer)
+	client.mutex.RUnlock()
 	if err != nil {
 		fmt.Errorf("Error reading userID from server: %s", err.Error())
 		return userID, err
@@ -86,7 +93,9 @@ func (client *Client) ListClientIDs() ([]uint64, error) {
 	}
 
 	userIDsLengthBuffer := make([]byte, 1)
+	client.mutex.RLock()
 	_, err = client.connection.Read(userIDsLengthBuffer)
+	client.mutex.RUnlock()
 	if err != nil {
 		fmt.Errorf("Error reading `who_is_here` response from server: %s", err.Error())
 		return userIDs, err
@@ -98,7 +107,9 @@ func (client *Client) ListClientIDs() ([]uint64, error) {
 	}
 
 	userIDsBuffer := make([]byte, userIDsLength)
+	client.mutex.RLock()
 	_, err = client.connection.Read(userIDsBuffer)
+	client.mutex.RUnlock()
 	if err != nil {
 		fmt.Errorf("Error in `relay` reading receivers list: %s", err.Error())
 		return userIDs, err
@@ -153,7 +164,6 @@ func (client *Client) SendMsg(recipients []uint64, body []byte) error {
 
 	var messageLength uint32
 	messageLength = uint32(len(body))
-
 	msgLengthBytes := make([]byte, 4)
 	binary.LittleEndian.PutUint32(msgLengthBytes, messageLength)
 	_, err = client.connection.Write(msgLengthBytes)
@@ -172,33 +182,45 @@ func (client *Client) SendMsg(recipients []uint64, body []byte) error {
 }
 
 func (client *Client) HandleIncomingMessages(writeCh chan<- IncomingMessage) {
-	senderIDBuffer := make([]byte, 8)
-	_, err := client.connection.Read(senderIDBuffer)
-	if err != nil {
-		fmt.Errorf("Error reading senderID from server: %s", err.Error())
-		return
-	}
-	senderID := binary.LittleEndian.Uint64(senderIDBuffer)
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("recovered from writing to a closed incoming messages channel")
+			return
+		}
+	}()
 
-	messageLengthBuffer := make([]byte, 4)
-	_, err = client.connection.Read(messageLengthBuffer)
-	if err != nil {
-		fmt.Errorf("Error in `incoming_message` reading message length: %s", err.Error())
-		return
-	}
-	messageLength, err := binary.ReadUvarint(bytes.NewBuffer(messageLengthBuffer))
-	if err != nil {
-		fmt.Errorf("Error in `incoming_message` incorrect message length: %s", err.Error())
-		return
-	}
+	for {
+		senderIDBuffer := make([]byte, 8)
+		client.mutex.RLock()
+		_, err := client.connection.Read(senderIDBuffer)
+		client.mutex.RUnlock()
+		if err != nil {
+			fmt.Errorf("Error reading senderID from server: %s", err.Error())
+			return
+		}
+		senderID := binary.LittleEndian.Uint64(senderIDBuffer)
 
-	messageBuffer := make([]byte, messageLength)
-	_, err = client.connection.Read(messageBuffer)
-	if err != nil {
-		fmt.Errorf("Error in `incoming_message` reading message: %s", err.Error())
-		return
-	}
+		messageLengthBuffer := make([]byte, 4)
+		client.mutex.RLock()
+		_, err = client.connection.Read(messageLengthBuffer)
+		client.mutex.RUnlock()
+		if err != nil {
+			fmt.Errorf("Error in `incoming_message` reading message length: %s", err.Error())
+			return
+		}
+		var messageLength uint32
+		messageLength = binary.LittleEndian.Uint32(messageLengthBuffer)
+		messageBuffer := make([]byte, messageLength)
+		client.mutex.RLock()
+		_, err = client.connection.Read(messageBuffer)
+		client.mutex.RUnlock()
+		if err != nil {
+			fmt.Errorf("Error in `incoming_message` reading message: %s", err.Error())
+			return
+		}
 
-	incomingMessage := IncomingMessage{SenderID: senderID, Body: messageBuffer}
-	writeCh <- incomingMessage
+		incomingMessage := IncomingMessage{SenderID: senderID, Body: messageBuffer}
+
+		writeCh <- incomingMessage
+	}
 }

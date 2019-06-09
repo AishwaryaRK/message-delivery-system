@@ -201,11 +201,9 @@ var handleRelayRequest = func(server *Server, clientConnection net.Conn) {
 		fmt.Errorf("Error in `relay` reading message length: %s", err.Error())
 		return
 	}
-	messageLength, err := binary.ReadUvarint(bytes.NewBuffer(messageLengthBuffer))
-	if err != nil {
-		fmt.Errorf("Error in `relay` incorrect message length: %s", err.Error())
-		return
-	}
+
+	var messageLength uint32
+	messageLength = binary.LittleEndian.Uint32(messageLengthBuffer)
 	messageBuffer := make([]byte, messageLength)
 	_, err = clientConnection.Read(messageBuffer)
 	if err != nil {

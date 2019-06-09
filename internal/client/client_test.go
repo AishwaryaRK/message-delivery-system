@@ -238,11 +238,13 @@ func (s *ServerTestSuite) TestHandleIncomingMessages() {
 	err1 := s.client.Connect(&serverAddr)
 	assert.NoError(s.T(), err1, "should not return error while creating client")
 
-	writeCh := make(chan IncomingMessage, 1)
-	s.client.HandleIncomingMessages(writeCh)
+	writeCh := make(chan IncomingMessage)
+	go s.client.HandleIncomingMessages(writeCh)
 	assert.NoError(s.T(), err1, "should not return error while sending message to peer clients")
 
 	incomingMessage := <-writeCh
+	close(writeCh)
+	s.client.Close()
 	assert.Equal(s.T(), expectedSenderID, incomingMessage.SenderID)
 	assert.Equal(s.T(), expectedMessage, string(incomingMessage.Body))
 	wg.Wait()
